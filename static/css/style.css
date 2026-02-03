@@ -1,0 +1,395 @@
+/* OCR Matemático - Estilos */
+
+:root {
+    --bg-primary: #0f0f1a;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #25253d;
+    --accent-primary: #6366f1;
+    --accent-secondary: #8b5cf6;
+    --accent-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --text-primary: #f0f0f5;
+    --text-secondary: #a0a0b5;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --glass-bg: rgba(30, 30, 50, 0.8);
+    --canvas-bg: #1e1e2e;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --shadow-glow: 0 0 30px rgba(99, 102, 241, 0.3);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Header */
+header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+}
+
+/* Main Layout */
+main {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    main {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Canvas Section */
+.canvas-section {
+    background: var(--glass-bg);
+    border-radius: 16px;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+}
+
+/* Toolbar */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tool-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tool-btn {
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+.tool-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-glow);
+}
+
+.tool-btn.danger:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+}
+
+/* Range input */
+input[type="range"] {
+    width: 80px;
+    accent-color: var(--accent-primary);
+}
+
+input[type="color"] {
+    width: 40px;
+    height: 30px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+#stroke-value {
+    color: var(--accent-secondary);
+    font-weight: bold;
+    min-width: 20px;
+}
+
+/* Canvas Wrapper */
+.canvas-wrapper {
+    position: relative;
+    background: var(--canvas-bg);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid var(--border-color);
+}
+
+#drawing-canvas {
+    display: block;
+    width: 100%;
+    height: 500px;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* Selection Box */
+.selection-box {
+    position: absolute;
+    border: 2px dashed var(--accent-primary);
+    background: rgba(99, 102, 241, 0.1);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.selection-box.hidden {
+    display: none;
+}
+
+/* Action Buttons */
+.action-buttons {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: center;
+}
+
+.primary-btn {
+    padding: 1rem 2rem;
+    background: var(--accent-gradient);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow-glow);
+}
+
+.primary-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.5);
+}
+
+.primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* Result Section */
+.result-section {
+    background: var(--glass-bg);
+    border-radius: 16px;
+    padding: 1.5rem;
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+}
+
+.result-section h2 {
+    margin-bottom: 1rem;
+    font-size: 1.3rem;
+}
+
+.result-section h3 {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.result-card {
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 1.5rem;
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.result-empty {
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+/* Loading */
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.loading.hidden {
+    display: none;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* LaTeX Output */
+.latex-output, .rendered-output {
+    margin-top: 1rem;
+}
+
+.latex-output.hidden, .rendered-output.hidden {
+    display: none;
+}
+
+.latex-code {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+.latex-code code {
+    flex: 1;
+    background: var(--bg-primary);
+    padding: 1rem;
+    border-radius: 8px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.9rem;
+    word-break: break-all;
+    border: 1px solid var(--border-color);
+}
+
+.copy-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.copy-btn:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+/* Math Preview */
+.math-preview {
+    background: white;
+    color: black;
+    padding: 2rem;
+    border-radius: 12px;
+    text-align: center;
+    font-size: 1.5rem;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Toast notifications */
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    padding: 1rem 1.5rem;
+    background: var(--success);
+    color: white;
+    border-radius: 8px;
+    font-weight: 500;
+    animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+    z-index: 1000;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+}
+
+/* Selection mode cursor */
+.canvas-wrapper.select-mode #drawing-canvas {
+    cursor: crosshair;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+    
+    header h1 {
+        font-size: 1.8rem;
+    }
+    
+    .toolbar {
+        justify-content: center;
+    }
+    
+    #drawing-canvas {
+        height: 350px;
+    }
+}

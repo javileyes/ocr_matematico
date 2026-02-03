@@ -1,0 +1,22 @@
+# OCR Matemático - Requirements
+
+# Flask web framework
+Flask>=2.3.0
+
+# Production WSGI server
+gunicorn>=21.0.0
+
+# Image processing
+Pillow>=9.0.0
+
+# HTTP requests (if needed for remote images)
+requests>=2.28.0
+
+# PaddleOCR - Uncomment based on your system:
+# For CPU-only (recommended for macOS/Apple Silicon):
+# paddlepaddle>=2.5.0
+# paddleocr>=2.7.0
+
+# For GPU (Linux with CUDA):
+# paddlepaddle-gpu>=2.5.0
+# paddleocr>=2.7.0

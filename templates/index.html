@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Matemático - Digitaliza tus fórmulas</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- MathJax para renderizar LaTeX -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📐 OCR Matemático</h1>
+            <p class="subtitle">Dibuja una fórmula y selecciona el área para digitalizarla</p>
+        </header>
+
+        <main>
+            <div class="canvas-section">
+                <div class="toolbar">
+                    <div class="tool-group">
+                        <button id="btn-draw" class="tool-btn active" title="Dibujar">
+                            ✏️ Dibujar
+                        </button>
+                        <button id="btn-select" class="tool-btn" title="Seleccionar área">
+                            ⬜ Seleccionar
+                        </button>
+                        <button id="btn-erase" class="tool-btn" title="Borrador">
+                            🧹 Borrar
+                        </button>
+                    </div>
+                    
+                    <div class="tool-group">
+                        <label for="stroke-width">Grosor:</label>
+                        <input type="range" id="stroke-width" min="1" max="20" value="3">
+                        <span id="stroke-value">3</span>
+                    </div>
+                    
+                    <div class="tool-group">
+                        <label for="stroke-color">Color:</label>
+                        <input type="color" id="stroke-color" value="#ffffff">
+                    </div>
+                    
+                    <div class="tool-group">
+                        <button id="btn-clear" class="tool-btn danger" title="Limpiar canvas">
+                            🗑️ Limpiar
+                        </button>
+                    </div>
+                </div>
+
+                <div class="canvas-wrapper">
+                    <canvas id="drawing-canvas"></canvas>
+                    <div id="selection-box" class="selection-box hidden"></div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="btn-digitize" class="primary-btn" disabled>
+                        🔮 Digitalizar selección
+                    </button>
+                </div>
+            </div>
+
+            <div class="result-section">
+                <h2>📝 Resultado</h2>
+                
+                <div class="result-card">
+                    <div id="loading" class="loading hidden">
+                        <div class="spinner"></div>
+                        <span>Procesando...</span>
+                    </div>
+                    
+                    <div id="result-content">
+                        <div class="result-empty">
+                            <p>Dibuja una fórmula, selecciona el área y haz clic en "Digitalizar"</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="latex-output" class="latex-output hidden">
+                    <h3>Código LaTeX:</h3>
+                    <div class="latex-code">
+                        <code id="latex-code"></code>
+                        <button id="btn-copy" class="copy-btn" title="Copiar LaTeX">
+                            📋 Copiar
+                        </button>
+                    </div>
+                </div>
+
+                <div id="rendered-output" class="rendered-output hidden">
+                    <h3>Vista previa:</h3>
+                    <div id="math-preview" class="math-preview"></div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by PaddleOCR VL | Renderizado con MathJax</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
