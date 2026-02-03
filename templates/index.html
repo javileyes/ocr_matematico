@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,11 +10,15 @@
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
+
 <body>
     <div class="container">
         <header>
             <h1>📐 OCR Matemático</h1>
             <p class="subtitle">Dibuja una fórmula y selecciona el área para digitalizarla</p>
+            <button id="theme-toggle" class="theme-toggle" title="Cambiar tema">
+                <span class="icon">🌙</span>
+            </button>
         </header>
 
         <main>
@@ -30,18 +35,18 @@
                             🧹 Borrar
                         </button>
                     </div>
-                    
+
                     <div class="tool-group">
                         <label for="stroke-width">Grosor:</label>
                         <input type="range" id="stroke-width" min="1" max="20" value="3">
                         <span id="stroke-value">3</span>
                     </div>
-                    
+
                     <div class="tool-group">
                         <label for="stroke-color">Color:</label>
                         <input type="color" id="stroke-color" value="#ffffff">
                     </div>
-                    
+
                     <div class="tool-group">
                         <button id="btn-clear" class="tool-btn danger" title="Limpiar canvas">
                             🗑️ Limpiar
@@ -63,13 +68,13 @@
 
             <div class="result-section">
                 <h2>📝 Resultado</h2>
-                
+
                 <div class="result-card">
                     <div id="loading" class="loading hidden">
                         <div class="spinner"></div>
                         <span>Procesando...</span>
                     </div>
-                    
+
                     <div id="result-content">
                         <div class="result-empty">
                             <p>Dibuja una fórmula, selecciona el área y haz clic en "Digitalizar"</p>
@@ -101,4 +106,5 @@
 
     <script src="/static/js/app.js"></script>
 </body>
+
 </html>

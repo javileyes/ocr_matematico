@@ -17,6 +17,7 @@ class MathCanvasApp {
         this.btnClear = document.getElementById('btn-clear');
         this.btnDigitize = document.getElementById('btn-digitize');
         this.btnCopy = document.getElementById('btn-copy');
+        this.themeToggle = document.getElementById('theme-toggle');
 
         // Tool controls
         this.strokeWidthInput = document.getElementById('stroke-width');
@@ -38,7 +39,8 @@ class MathCanvasApp {
         this.lastX = 0;
         this.lastY = 0;
         this.strokeWidth = 3;
-        this.strokeColor = '#ffffff';
+        this.isDarkTheme = true;
+        this.strokeColor = '#ffffff'; // Default for dark theme
 
         // Selection
         this.selection = null;
@@ -52,6 +54,7 @@ class MathCanvasApp {
         this.setupCanvas();
         this.bindEvents();
         this.setMode('draw');
+        this.initTheme();
     }
 
     setupCanvas() {
@@ -81,6 +84,7 @@ class MathCanvasApp {
         this.btnClear.addEventListener('click', () => this.clearCanvas());
         this.btnDigitize.addEventListener('click', () => this.digitizeSelection());
         this.btnCopy.addEventListener('click', () => this.copyLatex());
+        this.themeToggle.addEventListener('click', () => this.toggleTheme());
 
         // Tool controls
         this.strokeWidthInput.addEventListener('input', (e) => {
@@ -408,6 +412,45 @@ class MathCanvasApp {
         setTimeout(() => {
             toast.remove();
         }, 3000);
+    }
+
+    initTheme() {
+        // Check for saved theme preference or default to dark
+        const savedTheme = localStorage.getItem('ocr-theme');
+        if (savedTheme === 'light') {
+            this.isDarkTheme = false;
+            document.documentElement.setAttribute('data-theme', 'light');
+            this.updateThemeUI();
+        }
+    }
+
+    toggleTheme() {
+        this.isDarkTheme = !this.isDarkTheme;
+
+        if (this.isDarkTheme) {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.setItem('ocr-theme', 'dark');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('ocr-theme', 'light');
+        }
+
+        this.updateThemeUI();
+        this.clearCanvas(); // Clear canvas on theme change to avoid color conflicts
+    }
+
+    updateThemeUI() {
+        const icon = this.themeToggle.querySelector('.icon');
+
+        if (this.isDarkTheme) {
+            icon.textContent = '🌙';
+            this.strokeColor = '#ffffff';
+            this.strokeColorInput.value = '#ffffff';
+        } else {
+            icon.textContent = '☀️';
+            this.strokeColor = '#000000';
+            this.strokeColorInput.value = '#000000';
+        }
     }
 }
 
