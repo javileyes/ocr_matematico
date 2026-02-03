@@ -72,7 +72,7 @@ def latex_to_plain_math(latex: str) -> str:
     # Raíces cuadradas: \sqrt{x} -> sqrt(x)
     result = re.sub(r'\\sqrt\s*\{([^}]*)\}', r'sqrt(\1)', result)
     
-    # Potencias: x^{2} -> x^2, también x^2 se mantiene
+    # Potencias: x^{2} -> x^(2)
     result = re.sub(r'\^{([^}]*)}', r'^(\1)', result)
     
     # Subíndices: x_{n} -> x_n
@@ -98,6 +98,16 @@ def latex_to_plain_math(latex: str) -> str:
     # Llaves restantes
     result = result.replace('{', '(')
     result = result.replace('}', ')')
+    
+    # Simplificar paréntesis innecesarios:
+    # - Después de ^ si solo hay un término simple: x^(2) -> x^2
+    # - Después de _ si solo hay un término simple: x_(n) -> x_n
+    # Un término simple es: número, variable, o variable con subíndice
+    result = re.sub(r'\^\(([a-zA-Z0-9]+)\)', r'^\1', result)
+    result = re.sub(r'_\(([a-zA-Z0-9]+)\)', r'_\1', result)
+    
+    # Simplificar (x)/(y) -> x/y si x e y son términos simples
+    result = re.sub(r'\(([a-zA-Z0-9]+)\)/\(([a-zA-Z0-9]+)\)', r'\1/\2', result)
     
     # Limpiar espacios múltiples
     result = re.sub(r'\s+', ' ', result).strip()
