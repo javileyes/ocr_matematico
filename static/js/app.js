@@ -277,58 +277,79 @@ class MathCanvasApp {
         const dpr = window.devicePixelRatio || 1;
         const { x, y, width, height } = this.selection;
 
-        // Padding around the drawing (in logical pixels)
-        const padding = 40;
+        // Relative padding: 12% of the larger side (better than fixed padding)
+        const maxSide = Math.max(width, height);
+        const padding = Math.ceil(maxSide * 0.12);
 
-        // Create a temporary canvas for the selection WITH padding
-        const tempCanvas = document.createElement('canvas');
-        const outputWidth = width * dpr + 2 * padding * dpr;
-        const outputHeight = height * dpr + 2 * padding * dpr;
-        tempCanvas.width = outputWidth;
-        tempCanvas.height = outputHeight;
-        const tempCtx = tempCanvas.getContext('2d');
+        // Scale factor for higher resolution output (2x for better OCR)
+        const scaleFactor = 2;
+
+        // Calculate output dimensions with padding and scaling
+        const outW = Math.max(1, Math.round((width + 2 * padding) * scaleFactor));
+        const outH = Math.max(1, Math.round((height + 2 * padding) * scaleFactor));
+
+        // Create output canvas
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = outW;
+        outCanvas.height = outH;
+        const outCtx = outCanvas.getContext('2d');
+
+        // Enable high-quality smoothing
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.imageSmoothingQuality = 'high';
 
         // Fill with white background
-        tempCtx.fillStyle = '#ffffff';
-        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        outCtx.fillStyle = '#ffffff';
+        outCtx.fillRect(0, 0, outW, outH);
+
+        // Calculate destination dimensions (centered with padding)
+        const destW = Math.round(width * scaleFactor);
+        const destH = Math.round(height * scaleFactor);
+        const destX = Math.round((outW - destW) / 2);
+        const destY = Math.round((outH - destH) / 2);
+
+        // First, create a temporary canvas to process the pixels
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width * dpr;
+        tempCanvas.height = height * dpr;
+        const tempCtx = tempCanvas.getContext('2d');
 
         // Get image data from the original canvas selection
         const imageData = this.ctx.getImageData(x * dpr, y * dpr, width * dpr, height * dpr);
         const data = imageData.data;
 
         // Process pixels: convert to black on white
-        // In dark mode: white/light strokes on transparent background
-        // In light mode: black/dark strokes on transparent background
-        // Target: black strokes on white background
         for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
             const a = data[i + 3];
-
-            // If pixel has significant alpha (is drawn), it's part of the drawing
             const isDrawing = a > 50;
 
             if (isDrawing) {
-                // This is our drawing - make it black
-                data[i] = 0;     // R
-                data[i + 1] = 0; // G
-                data[i + 2] = 0; // B
-                data[i + 3] = 255; // A - fully opaque
+                // Drawing -> black
+                data[i] = 0;
+                data[i + 1] = 0;
+                data[i + 2] = 0;
+                data[i + 3] = 255;
             } else {
-                // This is background - make it white
-                data[i] = 255;     // R
-                data[i + 1] = 255; // G
-                data[i + 2] = 255; // B
-                data[i + 3] = 255; // A - fully opaque
+                // Background -> white
+                data[i] = 255;
+                data[i + 1] = 255;
+                data[i + 2] = 255;
+                data[i + 3] = 255;
             }
         }
 
-        // Put the processed image WITH padding offset
-        tempCtx.putImageData(imageData, padding * dpr, padding * dpr);
+        // Put processed pixels on temp canvas
+        tempCtx.putImageData(imageData, 0, 0);
+
+        // Draw temp canvas onto output canvas with scaling and centering
+        outCtx.drawImage(
+            tempCanvas,
+            0, 0, width * dpr, height * dpr,  // source rect
+            destX, destY, destW, destH         // destination rect (scaled and centered)
+        );
 
         // Convert to base64
-        const imageBase64 = tempCanvas.toDataURL('image/png');
+        const imageBase64 = outCanvas.toDataURL('image/png');
 
         // Show loading
         this.showLoading(true);

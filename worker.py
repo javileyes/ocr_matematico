@@ -1,6 +1,7 @@
 """
-OCR Worker - Standalone PaddleOCR-VL Instance
+OCR Worker - PP-FormulaNet Formula Recognition
 Part of the load-balanced cluster system
+Uses FormulaRecognitionPipeline for better nested formula recognition
 """
 import os
 import io
@@ -13,32 +14,42 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Union
 
+import numpy as np
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from PIL import Image
 
-# Suprimir verificación de conectividad de modelos
+# Configurar fuente de modelos PaddleX
+os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", os.getenv("PADDLE_PDX_MODEL_SOURCE", "huggingface"))
 os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
 
-# Importar PaddleOCR VL
+# Importar FormulaRecognitionPipeline
 PADDLE_AVAILABLE = False
 pipeline = None
 
 try:
-    from paddleocr import PaddleOCRVL
+    from paddleocr import FormulaRecognitionPipeline
     PADDLE_AVAILABLE = True
-    print("✅ PaddleOCRVL importado correctamente")
+    print("✅ FormulaRecognitionPipeline importado correctamente")
 except ImportError as e:
-    print(f"⚠️  PaddleOCRVL no está instalado: {e}")
+    print(f"⚠️  FormulaRecognitionPipeline no está instalado: {e}")
+    # Fallback a PaddleOCRVL si no está disponible
+    try:
+        from paddleocr import PaddleOCRVL
+        PADDLE_AVAILABLE = True
+        print("✅ Fallback a PaddleOCRVL")
+    except ImportError as e2:
+        print(f"⚠️  Tampoco está PaddleOCRVL: {e2}")
 
 app = Flask(__name__)
 
 # Configuración
-USE_LAYOUT = os.getenv("USE_LAYOUT_DETECTION", "false").lower() == "true"
-FORMULA_MODE = os.getenv("FORMULA_MODE", "true").lower() == "true"
+FORMULA_MODEL = os.getenv("FORMULA_MODEL_NAME", "PP-FormulaNet_plus-L")
 PORT = int(os.getenv("PORT", 5556))
 WORKER_ID = os.getenv("WORKER_ID", f"worker-{PORT}")
+DEVICE = os.getenv("PADDLE_DEVICE", "cpu")
 
 # Estado del worker
 worker_state = {
@@ -51,14 +62,28 @@ worker_state = {
 _state_lock = threading.Lock()
 _pipeline_lock = threading.Lock()
 
-# Inicializar OCR VL al arrancar
+# Inicializar pipeline al arrancar
 if PADDLE_AVAILABLE:
     try:
-        print(f"🔄 [{WORKER_ID}] Cargando modelo PaddleOCR VL...")
-        pipeline = PaddleOCRVL(use_layout_detection=USE_LAYOUT)
-        print(f"✅ [{WORKER_ID}] PaddleOCR VL cargado correctamente")
+        print(f"🔄 [{WORKER_ID}] Cargando modelo {FORMULA_MODEL}...")
+        print(f"   Device: {DEVICE}")
+        
+        # Intentar usar FormulaRecognitionPipeline
+        try:
+            pipeline = FormulaRecognitionPipeline(
+                device=DEVICE,
+                formula_recognition_model_name=FORMULA_MODEL,
+            )
+            print(f"✅ [{WORKER_ID}] FormulaRecognitionPipeline con {FORMULA_MODEL} cargado")
+        except NameError:
+            # Fallback a PaddleOCRVL si FormulaRecognitionPipeline no existe
+            pipeline = PaddleOCRVL(use_layout_detection=False)
+            print(f"✅ [{WORKER_ID}] Fallback: PaddleOCRVL cargado")
+            
     except Exception as e:
-        print(f"⚠️  [{WORKER_ID}] Error al cargar PaddleOCR VL: {e}")
+        print(f"⚠️  [{WORKER_ID}] Error al cargar pipeline: {e}")
+        import traceback
+        traceback.print_exc()
         PADDLE_AVAILABLE = False
         pipeline = None
 
@@ -67,6 +92,23 @@ ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp", ".pdf"
 
 def _ext_ok(path: str) -> bool:
     return Path(path).suffix.lower() in ALLOWED_EXT
+
+
+def _decode_image(payload: Union[str, bytes]) -> np.ndarray:
+    """
+    Decodifica imagen desde bytes o base64.
+    Devuelve numpy.ndarray RGB (H,W,3) uint8.
+    """
+    if isinstance(payload, str):
+        s = payload.strip()
+        if s.startswith("data:"):
+            s = s.split(",", 1)[1]
+        raw = base64.b64decode(s)
+    else:
+        raw = payload
+
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    return np.array(img, dtype=np.uint8)
 
 
 def latex_to_plain_math(latex: str) -> str:
@@ -78,110 +120,205 @@ def latex_to_plain_math(latex: str) -> str:
     result = re.sub(r'\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}', r'(\1)/(\2)', result)
     result = re.sub(r'\\sqrt\s*\{([^}]*)\}', r'sqrt(\1)', result)
     result = re.sub(r'\^{([^}]*)}', r'^(\1)', result)
-    result = re.sub(r'_{([^}]*)}', r'_\1', result)
-    
-    for func in ['sin', 'cos', 'tan', 'log', 'ln', 'exp', 'lim']:
-        result = re.sub(rf'\\{func}', func, result)
-    
-    result = result.replace('\\pi', 'pi')
-    result = result.replace('\\infty', 'inf')
-    result = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', result)
-    result = result.replace('\\,', '')
-    result = result.replace('\\;', '')
-    result = result.replace('\\ ', '')
-    result = result.replace('\\quad', ' ')
-    result = result.replace('{', '(')
-    result = result.replace('}', ')')
-    result = re.sub(r'\^\(([a-zA-Z0-9]+)\)', r'^\1', result)
-    result = re.sub(r'_\(([a-zA-Z0-9]+)\)', r'_\1', result)
+    result = re.sub(r'_{([^}]*)}', r'_(\1)', result)
+    result = re.sub(r'\\cdot', '*', result)
+    result = re.sub(r'\\times', '*', result)
+    result = re.sub(r'\\div', '/', result)
+    result = re.sub(r'\\pm', '±', result)
+    result = re.sub(r'\\mp', '∓', result)
+    result = re.sub(r'\\leq', '≤', result)
+    result = re.sub(r'\\geq', '≥', result)
+    result = re.sub(r'\\neq', '≠', result)
+    result = re.sub(r'\\pi', 'π', result)
+    result = re.sub(r'\\infty', '∞', result)
+    result = re.sub(r'\\alpha', 'α', result)
+    result = re.sub(r'\\beta', 'β', result)
+    result = re.sub(r'\\gamma', 'γ', result)
+    result = re.sub(r'\\theta', 'θ', result)
+    result = re.sub(r'\\lambda', 'λ', result)
+    result = re.sub(r'\\sigma', 'σ', result)
+    result = re.sub(r'\\sum', 'Σ', result)
+    result = re.sub(r'\\prod', 'Π', result)
+    result = re.sub(r'\\int', '∫', result)
+    result = re.sub(r'\\left\(', '(', result)
+    result = re.sub(r'\\right\)', ')', result)
+    result = re.sub(r'\\left\[', '[', result)
+    result = re.sub(r'\\right\]', ']', result)
+    result = re.sub(r'\\left\{', '{', result)
+    result = re.sub(r'\\right\}', '}', result)
+    result = re.sub(r'\\left\.', '', result)
+    result = re.sub(r'\\right\.', '', result)
+    result = re.sub(r'\\[a-zA-Z]+', '', result)
+    result = re.sub(r'\^(\([a-zA-Z0-9]+\))', r'^\1', result)
+    result = re.sub(r'_(\([a-zA-Z0-9]+\))', r'_\1', result)
     result = re.sub(r'\(([a-zA-Z0-9]+)\)/\(([a-zA-Z0-9]+)\)', r'\1/\2', result)
     result = re.sub(r'\s+', ' ', result).strip()
     
     return result
 
 
-def run_ocr(image_path: str):
-    """Ejecuta OCR VL sobre una imagen."""
+def run_ocr_formula(image_input):
+    """
+    Ejecuta OCR de fórmulas usando FormulaRecognitionPipeline.
+    
+    Args:
+        image_input: Path a imagen o numpy array RGB
+    
+    Returns:
+        dict con 'text' (LaTeX) y 'demo_mode'
+    """
     if not PADDLE_AVAILABLE or pipeline is None:
         return {
             "text": "x^2 + 2x + 1",
             "demo_mode": True
         }
     
-    # Carpeta temporal para resultados
-    outdir = Path(tempfile.mkdtemp(prefix="ocrvl_"))
-    results_text = []
-    
     with _pipeline_lock:
-        print(f"[{WORKER_ID}] Running OCR on {image_path} (formula_mode={FORMULA_MODE})")
-        # Si FORMULA_MODE está activo, usar prompt_label para indicar que es una fórmula
-        if FORMULA_MODE:
-            output = pipeline.predict(image_path, prompt_label='formula')
-        else:
-            output = pipeline.predict(image_path)
+        print(f"[{WORKER_ID}] Running formula OCR...")
         
-        # Guardar a disco con la API oficial
-        for res in output:
-            print(f"[{WORKER_ID}] Result type: {type(res)}")
-            res.save_to_json(save_path=str(outdir))
-    
-    # Recoger los JSON generados y extraer texto
-    formula_blocks = []
-    other_blocks = []
-    
-    for jf in sorted(outdir.glob("*.json")):
-        print(f"[{WORKER_ID}] Reading JSON: {jf}")
-        with open(jf, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            print(f"[{WORKER_ID}] JSON keys: {data.keys() if isinstance(data, dict) else 'not a dict'}")
+        try:
+            # Usar FormulaRecognitionPipeline
+            # Desactivar layout y preprocesado para canvas individual
+            output = pipeline.predict(
+                image_input,
+                use_layout_detection=False,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+            )
             
-            if isinstance(data, dict) and "parsing_res_list" in data:
-                parsing_list = data["parsing_res_list"]
-                print(f"[{WORKER_ID}] parsing_res_list has {len(parsing_list)} items")
-                for block in parsing_list:
+            # Obtener primer resultado
+            try:
+                res = next(iter(output))
+            except StopIteration:
+                print(f"[{WORKER_ID}] No results from pipeline")
+                return {"text": "", "demo_mode": False}
+            
+            # Explorar la estructura del resultado
+            print(f"[{WORKER_ID}] Result type: {type(res)}")
+            print(f"[{WORKER_ID}] Result dir: {[a for a in dir(res) if not a.startswith('_')]}")
+            
+            # Intentar obtener datos de varias formas
+            data = None
+            
+            # Forma 1: atributo json (puede ser dict o método)
+            if hasattr(res, 'json'):
+                json_attr = getattr(res, 'json')
+                if callable(json_attr):
+                    data = json_attr()
+                else:
+                    data = json_attr
+                print(f"[{WORKER_ID}] json attr: {data}")
+            
+            # Forma 2: atributo res
+            if hasattr(res, 'res'):
+                res_attr = getattr(res, 'res')
+                print(f"[{WORKER_ID}] res attr type: {type(res_attr)}")
+                print(f"[{WORKER_ID}] res attr: {res_attr}")
+                if isinstance(res_attr, dict):
+                    data = res_attr
+                elif isinstance(res_attr, list) and len(res_attr) > 0:
+                    data = res_attr[0] if isinstance(res_attr[0], dict) else {"formula_res_list": res_attr}
+            
+            # Forma 3: convertir a dict directamente
+            if data is None and hasattr(res, '__dict__'):
+                data = res.__dict__
+                print(f"[{WORKER_ID}] __dict__: {data}")
+            
+            if data is None:
+                data = {}
+            
+            # Buscar la fórmula en diferentes estructuras
+            latex = ""
+            
+            # Estructura 1: formula_res_list
+            frl = data.get("formula_res_list") or []
+            if frl:
+                if isinstance(frl, list) and len(frl) > 0:
+                    first_item = frl[0]
+                    if isinstance(first_item, dict):
+                        latex = first_item.get("rec_formula", "")
+                    elif isinstance(first_item, str):
+                        latex = first_item
+                print(f"[{WORKER_ID}] Got from formula_res_list: {latex}")
+            
+            # Estructura 2: rec_formula directamente
+            if not latex and "rec_formula" in data:
+                latex = data.get("rec_formula", "")
+                print(f"[{WORKER_ID}] Got from rec_formula: {latex}")
+            
+            # Estructura 3: res contiene la fórmula (estructura anidada de FormulaRecognitionPipeline)
+            if not latex:
+                res_data = data.get("res")
+                if isinstance(res_data, str):
+                    latex = res_data
+                    print(f"[{WORKER_ID}] Got from res string: {latex}")
+                elif isinstance(res_data, dict):
+                    # Buscar en res.formula_res_list primero
+                    inner_frl = res_data.get("formula_res_list") or []
+                    if inner_frl and isinstance(inner_frl, list) and len(inner_frl) > 0:
+                        first_item = inner_frl[0]
+                        if isinstance(first_item, dict):
+                            latex = first_item.get("rec_formula", "")
+                        elif isinstance(first_item, str):
+                            latex = first_item
+                        print(f"[{WORKER_ID}] Got from res.formula_res_list: {latex}")
+                    else:
+                        # Fallback a rec_formula directo en res
+                        latex = res_data.get("rec_formula", "") or res_data.get("formula", "")
+                        if latex:
+                            print(f"[{WORKER_ID}] Got from res dict: {latex}")
+                elif isinstance(res_data, list) and len(res_data) > 0:
+                    first = res_data[0]
+                    if isinstance(first, str):
+                        latex = first
+                    elif isinstance(first, dict):
+                        latex = first.get("rec_formula", "") or first.get("formula", "")
+                    print(f"[{WORKER_ID}] Got from res list: {latex}")
+            
+            # Estructura 4: parsing_res_list (formato PaddleOCR-VL)
+            if not latex and "parsing_res_list" in data:
+                for block in data["parsing_res_list"]:
                     if isinstance(block, dict) and "block_content" in block:
                         content = block["block_content"].strip()
-                        block_label = block.get("block_label", "")
-                        print(f"[{WORKER_ID}] Block label: '{block_label}', content: {content[:50]}...")
-                        
                         if content:
-                            # Priorizar bloques de fórmulas como en el notebook original
-                            if "formula" in block_label.lower():
-                                formula_blocks.append(content)
-                                print(f"[{WORKER_ID}] Found FORMULA: {content}")
-                            else:
-                                other_blocks.append(content)
-                                print(f"[{WORKER_ID}] Found OTHER: {content}")
+                            latex = content
+                            print(f"[{WORKER_ID}] Got from parsing_res_list: {latex}")
+                            break
+            
+            if latex:
+                return {"text": _clean_latex(latex.strip()), "demo_mode": False}
+            
+            print(f"[{WORKER_ID}] Could not extract formula from data: {data}")
+            return {"text": "", "demo_mode": False}
+            
+        except Exception as e:
+            print(f"[{WORKER_ID}] Error in formula OCR: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"text": "", "demo_mode": False}
+
+
+def _clean_latex(text: str) -> str:
+    """Limpia delimitadores LaTeX del texto."""
+    text = text.strip()
     
-    # Si hay fórmulas, usar esas. Si no, usar todo el contenido
-    if formula_blocks:
-        results_text = formula_blocks
-    else:
-        results_text = other_blocks
+    # Eliminar delimitadores $$ o $
+    if text.startswith("$$") and text.endswith("$$"):
+        text = text[2:-2].strip()
+    elif text.startswith("$") and text.endswith("$"):
+        text = text[1:-1].strip()
+    elif text.startswith("$"):
+        text = text[1:].strip()
+    if text.endswith("$"):
+        text = text[:-1].strip()
     
-    # Limpiar
-    shutil.rmtree(outdir, ignore_errors=True)
-    
-    full_text = " ".join(str(t) for t in results_text) if results_text else ""
-    full_text = full_text.strip()
-    
-    # Eliminar delimitadores $ del LaTeX (varios formatos posibles)
-    if full_text.startswith("$$") and full_text.endswith("$$"):
-        full_text = full_text[2:-2].strip()
-    elif full_text.startswith("$") and full_text.endswith("$"):
-        full_text = full_text[1:-1].strip()
-    # Manejar caso de $ sin cerrar o solo al inicio/final
-    elif full_text.startswith("$"):
-        full_text = full_text[1:].strip()
-    if full_text.endswith("$"):
-        full_text = full_text[:-1].strip()
-    
-    print(f"[{WORKER_ID}] Final result: '{full_text}'")
-    
-    return {
-        "text": full_text,
-        "demo_mode": False
-    }
+    return text
+
+
+# Legacy function for compatibility
+def run_ocr(image_path: str):
+    """Ejecuta OCR sobre una imagen (legacy, usa run_ocr_formula internamente)."""
+    return run_ocr_formula(image_path)
 
 
 @app.route("/status", methods=["GET"])
@@ -194,7 +331,8 @@ def status():
             "ready": PADDLE_AVAILABLE and pipeline is not None,
             "busy": worker_state["busy"],
             "requests_processed": worker_state["requests_processed"],
-            "uptime_seconds": round(uptime, 1)
+            "uptime_seconds": round(uptime, 1),
+            "model": FORMULA_MODEL
         })
 
 
@@ -202,90 +340,83 @@ def status():
 def health():
     """Health check endpoint."""
     return jsonify({
-        "status": "healthy" if PADDLE_AVAILABLE else "degraded",
+        "status": "healthy",
         "worker_id": WORKER_ID,
-        "paddle_available": PADDLE_AVAILABLE
+        "ready": PADDLE_AVAILABLE and pipeline is not None
     })
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """Procesa una petición de OCR."""
-    request_id = str(uuid.uuid4())[:8]
+    """Endpoint principal de predicción."""
+    if not PADDLE_AVAILABLE or pipeline is None:
+        return jsonify({
+            "ok": False,
+            "error": "OCR no disponible"
+        }), 503
     
     with _state_lock:
+        if worker_state["busy"]:
+            return jsonify({
+                "ok": False,
+                "error": "Worker ocupado"
+            }), 503
         worker_state["busy"] = True
-        worker_state["current_request"] = request_id
+        worker_state["current_request"] = str(uuid.uuid4())[:8]
     
-    tmp_path = None
     try:
-        start_time = time.time()
+        data = request.get_json()
+        print(f"[{WORKER_ID}] Received predict request, data keys: {data.keys() if data else 'None'}")
         
-        if request.is_json:
-            data = request.json
-            if "image" in data:
-                image_data = data["image"]
-                if "," in image_data:
-                    image_data = image_data.split(",")[1]
-                
-                image_bytes = base64.b64decode(image_data)
-                
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                tmp.write(image_bytes)
-                tmp.close()
-                tmp_path = tmp.name
-            else:
-                return jsonify({"ok": False, "error": "No 'image' in JSON"}), 400
+        if not data or "image" not in data:
+            print(f"[{WORKER_ID}] No image in request")
+            return jsonify({
+                "ok": False,
+                "error": "No se proporcionó imagen"
+            }), 400
         
-        elif "file" in request.files:
-            f = request.files["file"]
-            filename = secure_filename(f.filename or f"upload-{uuid.uuid4().hex}")
-            suffix = Path(filename).suffix or ".png"
-            if suffix.lower() not in ALLOWED_EXT:
-                return jsonify({"ok": False, "error": "Unsupported extension"}), 400
-            
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            f.save(tmp.name)
-            tmp_path = tmp.name
-        else:
-            return jsonify({"ok": False, "error": "Send 'image' (base64) or 'file'"}), 400
-
-        result = run_ocr(tmp_path)
-        latex_text = result["text"]
-        plain_math = latex_to_plain_math(latex_text)
+        # Decodificar imagen desde base64
+        try:
+            img_np = _decode_image(data["image"])
+        except Exception as e:
+            return jsonify({
+                "ok": False,
+                "error": f"Error al decodificar imagen: {e}"
+            }), 400
         
-        elapsed = round(time.time() - start_time, 2)
-        print(f"[{WORKER_ID}] Request {request_id} completed in {elapsed}s")
+        # Ejecutar OCR
+        result = run_ocr_formula(img_np)
+        
+        with _state_lock:
+            worker_state["requests_processed"] += 1
+            worker_state["last_request_time"] = time.time()
+        
+        latex = result.get("text", "")
         
         return jsonify({
             "ok": True,
-            "latex": latex_text,
-            "plain_math": plain_math,
+            "latex": latex,
+            "plain_math": latex_to_plain_math(latex),
             "demo_mode": result.get("demo_mode", False),
-            "worker_id": WORKER_ID,
-            "processing_time": elapsed
+            "worker_id": WORKER_ID
         })
-
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
-    
-    finally:
-        if tmp_path and Path(tmp_path).exists():
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
         
+    finally:
         with _state_lock:
             worker_state["busy"] = False
             worker_state["current_request"] = None
-            worker_state["requests_processed"] += 1
-            worker_state["last_request_time"] = time.time()
 
 
 if __name__ == "__main__":
-    print(f"🚀 [{WORKER_ID}] Iniciando worker en http://localhost:{PORT}")
-    print(f"   PaddleOCR VL disponible: {PADDLE_AVAILABLE}")
+    print(f"🚀 [{WORKER_ID}] Starting OCR Worker on port {PORT}...")
+    print(f"   Model: {FORMULA_MODEL}")
+    print(f"   Device: {DEVICE}")
     app.run(host="0.0.0.0", port=PORT, debug=False, threaded=True)
