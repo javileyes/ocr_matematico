@@ -4,6 +4,7 @@ Flask server with PaddleOCR VL for handwriting recognition
 """
 import os
 import io
+import re
 import json
 import uuid
 import base64
@@ -56,6 +57,52 @@ ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp", ".pdf"
 
 def _ext_ok(path: str) -> bool:
     return Path(path).suffix.lower() in ALLOWED_EXT
+
+
+def latex_to_plain_math(latex: str) -> str:
+    """Convierte LaTeX a formato matemático plano (ej: 3*x^2+2*x)."""
+    if not latex:
+        return ""
+    
+    result = latex
+    
+    # Fracciones: \frac{a}{b} -> (a)/(b)
+    result = re.sub(r'\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}', r'(\1)/(\2)', result)
+    
+    # Raíces cuadradas: \sqrt{x} -> sqrt(x)
+    result = re.sub(r'\\sqrt\s*\{([^}]*)\}', r'sqrt(\1)', result)
+    
+    # Potencias: x^{2} -> x^2, también x^2 se mantiene
+    result = re.sub(r'\^{([^}]*)}', r'^(\1)', result)
+    
+    # Subíndices: x_{n} -> x_n
+    result = re.sub(r'_{([^}]*)}', r'_\1', result)
+    
+    # Funciones trigonométricas y otras
+    for func in ['sin', 'cos', 'tan', 'log', 'ln', 'exp', 'lim']:
+        result = re.sub(rf'\\{func}', func, result)
+    
+    # Pi, infinito
+    result = result.replace('\\pi', 'pi')
+    result = result.replace('\\infty', 'inf')
+    
+    # Multiplicación implícita: añadir * entre número y variable
+    result = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', result)
+    
+    # Espacios de LaTeX
+    result = result.replace('\\,', '')
+    result = result.replace('\\;', '')
+    result = result.replace('\\ ', '')
+    result = result.replace('\\quad', ' ')
+    
+    # Llaves restantes
+    result = result.replace('{', '(')
+    result = result.replace('}', ')')
+    
+    # Limpiar espacios múltiples
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    return result
 
 
 def run_ocr(image_path: str):
@@ -171,10 +218,13 @@ def predict():
             return jsonify({"ok": False, "error": "Envía 'image' (base64) o 'file'"}), 400
 
         result = run_ocr(tmp_path)
+        latex_text = result["text"]
+        plain_math = latex_to_plain_math(latex_text)
         
         return jsonify({
             "ok": True,
-            "latex": result["text"],
+            "latex": latex_text,
+            "plain_math": plain_math,
             "demo_mode": result.get("demo_mode", False)
         })
 

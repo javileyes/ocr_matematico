@@ -29,6 +29,9 @@ class MathCanvasApp {
         this.resultContent = document.getElementById('result-content');
         this.latexOutput = document.getElementById('latex-output');
         this.latexCode = document.getElementById('latex-code');
+        this.plainMathOutput = document.getElementById('plain-math-output');
+        this.plainMathCode = document.getElementById('plain-math-code');
+        this.btnCopyPlain = document.getElementById('btn-copy-plain');
         this.renderedOutput = document.getElementById('rendered-output');
         this.mathPreview = document.getElementById('math-preview');
 
@@ -84,6 +87,7 @@ class MathCanvasApp {
         this.btnClear.addEventListener('click', () => this.clearCanvas());
         this.btnDigitize.addEventListener('click', () => this.digitizeSelection());
         this.btnCopy.addEventListener('click', () => this.copyLatex());
+        this.btnCopyPlain.addEventListener('click', () => this.copyPlainMath());
         this.themeToggle.addEventListener('click', () => this.toggleTheme());
 
         // Tool controls
@@ -338,7 +342,7 @@ class MathCanvasApp {
             const result = await response.json();
 
             if (result.ok) {
-                this.displayResult(result.latex, result.demo_mode);
+                this.displayResult(result.latex, result.plain_math, result.demo_mode);
             } else {
                 this.showError(result.error || 'Error desconocido');
             }
@@ -359,10 +363,14 @@ class MathCanvasApp {
         }
     }
 
-    displayResult(latex, isDemoMode = false) {
+    displayResult(latex, plainMath, isDemoMode = false) {
         // Show LaTeX code
         this.latexCode.textContent = latex;
         this.latexOutput.classList.remove('hidden');
+
+        // Show plain math code
+        this.plainMathCode.textContent = plainMath || latex;
+        this.plainMathOutput.classList.remove('hidden');
 
         // Render with MathJax
         this.mathPreview.innerHTML = isDemoMode
@@ -397,6 +405,15 @@ class MathCanvasApp {
         const latex = this.latexCode.textContent;
         navigator.clipboard.writeText(latex).then(() => {
             this.showToast('¡LaTeX copiado al portapapeles!');
+        }).catch(err => {
+            console.error('Error al copiar:', err);
+        });
+    }
+
+    copyPlainMath() {
+        const plainMath = this.plainMathCode.textContent;
+        navigator.clipboard.writeText(plainMath).then(() => {
+            this.showToast('¡Formato matemático copiado al portapapeles!');
         }).catch(err => {
             console.error('Error al copiar:', err);
         });
