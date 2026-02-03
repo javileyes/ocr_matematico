@@ -18,10 +18,15 @@ app = Flask(__name__)
 
 # Configuración
 PORT = int(os.getenv("PORT", 5555))
-WORKERS = [
+NUM_WORKERS = int(os.getenv("NUM_WORKERS", 1))
+
+# Configurar workers según el número solicitado
+ALL_WORKERS = [
     {"url": "http://localhost:5556", "id": "worker-1"},
     {"url": "http://localhost:5557", "id": "worker-2"},
 ]
+WORKERS = ALL_WORKERS[:NUM_WORKERS]
+
 HEALTH_CHECK_INTERVAL = 5  # seconds
 REQUEST_TIMEOUT = 120  # seconds for OCR
 
