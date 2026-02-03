@@ -198,10 +198,13 @@ class MathCanvasApp {
             this.updateSelectionBox(left, top, w, h);
         } else if (this.isDrawing) {
             if (this.mode === 'draw') {
+                this.ctx.globalCompositeOperation = 'source-over';
                 this.ctx.strokeStyle = this.strokeColor;
                 this.ctx.lineWidth = this.strokeWidth;
             } else if (this.mode === 'erase') {
-                this.ctx.strokeStyle = '#1e1e2e'; // Canvas background color
+                // Use destination-out to truly erase pixels (sets alpha to 0)
+                this.ctx.globalCompositeOperation = 'destination-out';
+                this.ctx.strokeStyle = 'rgba(0,0,0,1)';
                 this.ctx.lineWidth = this.strokeWidth * 3;
             }
 
