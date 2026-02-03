@@ -3,15 +3,12 @@ Load Balancer - Distributes OCR requests across worker instances
 Provides frontend and intelligent routing with queue management
 """
 import os
-import asyncio
-import aiohttp
 import time
 import json
 from collections import deque
 from threading import Thread, Lock
-from concurrent.futures import ThreadPoolExecutor
 
-from flask import Flask, request, jsonify, render_template, Response
+from flask import Flask, request, jsonify, render_template
 import requests
 
 app = Flask(__name__)

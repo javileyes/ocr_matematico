@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Configuración por defecto
-NUM_WORKERS=1
+NUM_WORKERS=2
 
 # Mostrar ayuda
 show_help() {
@@ -21,7 +21,7 @@ Uso: ./start_cluster.sh [OPCIONES]
 
 Opciones:
   -w, --workers N    Número de workers a iniciar (1 o 2)
-                     Por defecto: 1 worker
+                     Por defecto: 2 workers
   
   -2, --dual         Atajo para iniciar 2 workers (equivale a -w 2)
   
@@ -91,7 +91,7 @@ mkdir -p logs
 
 # Iniciar Worker 1
 echo "🔄 Iniciando Worker 1 (puerto 5556)..."
-WORKER_ID="worker-1" PORT=5556 python worker.py > logs/worker1.log 2>&1 &
+PYTHONUNBUFFERED=1 WORKER_ID="worker-1" PORT=5556 python -u worker.py > logs/worker1.log 2>&1 &
 WORKER1_PID=$!
 echo "   PID: $WORKER1_PID"
 echo "$WORKER1_PID" > logs/worker1.pid
@@ -99,7 +99,7 @@ echo "$WORKER1_PID" > logs/worker1.pid
 # Iniciar Worker 2 si se solicitaron 2 workers
 if [ "$NUM_WORKERS" -eq 2 ]; then
     echo "🔄 Iniciando Worker 2 (puerto 5557)..."
-    WORKER_ID="worker-2" PORT=5557 python worker.py > logs/worker2.log 2>&1 &
+    PYTHONUNBUFFERED=1 WORKER_ID="worker-2" PORT=5557 python -u worker.py > logs/worker2.log 2>&1 &
     WORKER2_PID=$!
     echo "   PID: $WORKER2_PID"
     echo "$WORKER2_PID" > logs/worker2.pid

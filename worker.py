@@ -107,38 +107,52 @@ def run_ocr(image_path: str):
             "demo_mode": True
         }
     
+    # Carpeta temporal para resultados
+    outdir = Path(tempfile.mkdtemp(prefix="ocrvl_"))
+    results_text = []
+    
     with _pipeline_lock:
-        outdir = Path(tempfile.mkdtemp(prefix="ocrvl_"))
-        output = pipeline.predict(image_path, save_path=str(outdir))
+        print(f"[{WORKER_ID}] Running OCR on {image_path}")
+        output = pipeline.predict(image_path)
         
-        results_text = []
-        
+        # Guardar a disco con la API oficial
         for res in output:
-            print(f"[{WORKER_ID}] Processing OCR result...")
-        
-        for jf in sorted(outdir.glob("*.json")):
-            with open(jf, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, dict) and "parsing_res_list" in data:
-                    for block in data["parsing_res_list"]:
-                        if isinstance(block, dict) and "block_content" in block:
-                            content = block["block_content"].strip()
-                            if content:
-                                results_text.append(content)
-        
-        shutil.rmtree(outdir, ignore_errors=True)
-        
-        full_text = " ".join(str(t) for t in results_text) if results_text else ""
-        full_text = full_text.strip()
-        if full_text.startswith("$$") and full_text.endswith("$$"):
-            full_text = full_text[2:-2].strip()
-        elif full_text.startswith("$") and full_text.endswith("$"):
-            full_text = full_text[1:-1].strip()
-        
-        return {
-            "text": full_text,
-            "demo_mode": False
-        }
+            print(f"[{WORKER_ID}] Result type: {type(res)}")
+            res.save_to_json(save_path=str(outdir))
+    
+    # Recoger los JSON generados y extraer texto
+    for jf in sorted(outdir.glob("*.json")):
+        print(f"[{WORKER_ID}] Reading JSON: {jf}")
+        with open(jf, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            print(f"[{WORKER_ID}] JSON keys: {data.keys() if isinstance(data, dict) else 'not a dict'}")
+            
+            if isinstance(data, dict) and "parsing_res_list" in data:
+                parsing_list = data["parsing_res_list"]
+                print(f"[{WORKER_ID}] parsing_res_list has {len(parsing_list)} items")
+                for block in parsing_list:
+                    if isinstance(block, dict) and "block_content" in block:
+                        content = block["block_content"].strip()
+                        if content:
+                            results_text.append(content)
+                            print(f"[{WORKER_ID}] Found content: {content}")
+    
+    # Limpiar
+    shutil.rmtree(outdir, ignore_errors=True)
+    
+    full_text = " ".join(str(t) for t in results_text) if results_text else ""
+    full_text = full_text.strip()
+    if full_text.startswith("$$") and full_text.endswith("$$"):
+        full_text = full_text[2:-2].strip()
+    elif full_text.startswith("$") and full_text.endswith("$"):
+        full_text = full_text[1:-1].strip()
+    
+    print(f"[{WORKER_ID}] Final result: '{full_text}'")
+    
+    return {
+        "text": full_text,
+        "demo_mode": False
+    }
 
 
 @app.route("/status", methods=["GET"])
