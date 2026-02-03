@@ -288,7 +288,8 @@ class MathCanvasApp {
         const data = imageData.data;
 
         // Process pixels: convert to black on white
-        // Original: white/light strokes on dark/transparent background
+        // In dark mode: white/light strokes on transparent background
+        // In light mode: black/dark strokes on transparent background
         // Target: black strokes on white background
         for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
@@ -296,10 +297,8 @@ class MathCanvasApp {
             const b = data[i + 2];
             const a = data[i + 3];
 
-            // If pixel is mostly transparent or dark (background), make it white
-            // If pixel is bright (our drawing), make it black
-            const brightness = (r + g + b) / 3;
-            const isDrawing = a > 50 && brightness > 100; // Has color and is visible
+            // If pixel has significant alpha (is drawn), it's part of the drawing
+            const isDrawing = a > 50;
 
             if (isDrawing) {
                 // This is our drawing - make it black
