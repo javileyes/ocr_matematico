@@ -58,14 +58,27 @@ python -c "from paddleocr import FormulaRecognitionPipeline; print('✅ Pipeline
 ### Modo Cluster (Recomendado)
 
 ```bash
-# Iniciar cluster con 2 workers
+# Iniciar cluster con 2 workers (por defecto)
 ./start_cluster.sh
+
+# Iniciar con número específico de workers
+./start_cluster.sh -w 4      # 4 workers (~10 GB RAM)
+NUM_WORKERS=3 ./start_cluster.sh  # Variable de entorno
 
 # Detener cluster
 ./stop_cluster.sh
 ```
 
 Abre en el navegador: **http://localhost:5555**
+
+### Escalado según RAM disponible
+
+| RAM Sistema | Workers recomendados | Comando |
+|-------------|---------------------|---------|
+| 8 GB | 1-2 workers | `./start_cluster.sh -w 1` |
+| 16 GB | 2-4 workers | `./start_cluster.sh -w 3` |
+| 32 GB | 4-8 workers | `./start_cluster.sh -w 6` |
+| 64 GB+ | 8 workers | `./start_cluster.sh -w 8` |
 
 ### Modo desarrollo simple
 

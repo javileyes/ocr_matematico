@@ -8,7 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Configuración por defecto
-NUM_WORKERS=2
+NUM_WORKERS=${NUM_WORKERS:-2}
+BASE_PORT=5556
 
 # Mostrar ayuda
 show_help() {
@@ -20,27 +21,26 @@ show_help() {
 Uso: ./start_cluster.sh [OPCIONES]
 
 Opciones:
-  -w, --workers N    Número de workers a iniciar (1 o 2)
+  -w, --workers N    Número de workers a iniciar (1-8)
                      Por defecto: 2 workers
-  
-  -2, --dual         Atajo para iniciar 2 workers (equivale a -w 2)
   
   -h, --help         Mostrar esta ayuda
 
 Ejemplos:
-  ./start_cluster.sh              # Inicia 1 worker (modo normal)
-  ./start_cluster.sh -2           # Inicia 2 workers (modo dual)
-  ./start_cluster.sh --workers 2  # Inicia 2 workers
-  ./start_cluster.sh --dual       # Inicia 2 workers
+  ./start_cluster.sh              # Inicia 2 workers (por defecto)
+  ./start_cluster.sh -w 1         # Inicia 1 worker
+  ./start_cluster.sh -w 4         # Inicia 4 workers
+  NUM_WORKERS=3 ./start_cluster.sh  # Variable de entorno
 
 Puertos utilizados:
   - Balanceador/Frontend: 5555
-  - Worker 1: 5556
-  - Worker 2: 5557 (solo con -2 o -w 2)
+  - Workers: 5556, 5557, 5558... (según NUM_WORKERS)
 
-Memoria estimada:
-  - 1 worker: ~4.5 GB RAM
-  - 2 workers: ~9 GB RAM
+Memoria estimada por worker: ~2.5 GB RAM
+  - 1 worker:  ~2.5 GB
+  - 2 workers: ~5 GB
+  - 4 workers: ~10 GB
+  - 8 workers: ~20 GB
 
 Detener el cluster:
   ./stop_cluster.sh
@@ -57,15 +57,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         -w|--workers)
             NUM_WORKERS="$2"
-            if [[ ! "$NUM_WORKERS" =~ ^[12]$ ]]; then
-                echo "❌ Error: El número de workers debe ser 1 o 2"
+            if [[ ! "$NUM_WORKERS" =~ ^[1-8]$ ]]; then
+                echo "❌ Error: El número de workers debe ser entre 1 y 8"
                 exit 1
             fi
             shift 2
-            ;;
-        -2|--dual)
-            NUM_WORKERS=2
-            shift
             ;;
         *)
             echo "❌ Opción desconocida: $1"
@@ -81,81 +77,66 @@ echo "╚═══════════════════════�
 
 # Matar procesos anteriores si existen
 echo "🧹 Limpiando procesos anteriores..."
-lsof -ti :5555 | xargs kill -9 2>/dev/null || true
-lsof -ti :5556 | xargs kill -9 2>/dev/null || true
-lsof -ti :5557 | xargs kill -9 2>/dev/null || true
+for i in $(seq 0 8); do
+    PORT=$((5555 + i))
+    lsof -ti :$PORT | xargs kill -9 2>/dev/null || true
+done
 sleep 2
 
 # Crear directorio de logs
 mkdir -p logs
 
-# Iniciar Worker 1
-echo "🔄 Iniciando Worker 1 (puerto 5556)..."
-PYTHONUNBUFFERED=1 WORKER_ID="worker-1" PORT=5556 python -u worker.py > logs/worker1.log 2>&1 &
-WORKER1_PID=$!
-echo "   PID: $WORKER1_PID"
-echo "$WORKER1_PID" > logs/worker1.pid
+# Array para guardar PIDs
+declare -a WORKER_PIDS
 
-# Iniciar Worker 2 si se solicitaron 2 workers
-if [ "$NUM_WORKERS" -eq 2 ]; then
-    echo "🔄 Iniciando Worker 2 (puerto 5557)..."
-    PYTHONUNBUFFERED=1 WORKER_ID="worker-2" PORT=5557 python -u worker.py > logs/worker2.log 2>&1 &
-    WORKER2_PID=$!
-    echo "   PID: $WORKER2_PID"
-    echo "$WORKER2_PID" > logs/worker2.pid
-fi
+# Iniciar workers dinámicamente
+for i in $(seq 1 $NUM_WORKERS); do
+    WORKER_PORT=$((BASE_PORT + i - 1))
+    echo "🔄 Iniciando Worker $i (puerto $WORKER_PORT)..."
+    PYTHONUNBUFFERED=1 WORKER_ID="worker-$i" PORT=$WORKER_PORT python -u worker.py > logs/worker$i.log 2>&1 &
+    WORKER_PID=$!
+    echo "   PID: $WORKER_PID"
+    echo "$WORKER_PID" > logs/worker$i.pid
+    WORKER_PIDS+=($WORKER_PID)
+done
 
 # Esperar a que los modelos se carguen
 echo ""
-echo "⏳ Esperando a que los workers carguen PaddleOCR-VL..."
+echo "⏳ Esperando a que los workers carguen PP-FormulaNet..."
 echo "   (Esto puede tardar 30-60 segundos la primera vez)"
 echo ""
 
 # Mostrar progreso
-for i in {1..90}; do
-    # Verificar si los workers siguen vivos
-    if ! kill -0 $WORKER1_PID 2>/dev/null; then
-        echo ""
-        echo "❌ Worker 1 falló. Ver logs/worker1.log"
-        exit 1
-    fi
-    
-    if [ "$NUM_WORKERS" -eq 2 ]; then
-        if ! kill -0 $WORKER2_PID 2>/dev/null; then
+for attempt in {1..120}; do
+    # Verificar si todos los workers siguen vivos
+    ALL_ALIVE=true
+    for i in $(seq 1 $NUM_WORKERS); do
+        PID=${WORKER_PIDS[$((i-1))]}
+        if ! kill -0 $PID 2>/dev/null; then
             echo ""
-            echo "❌ Worker 2 falló. Ver logs/worker2.log"
+            echo "❌ Worker $i falló. Ver logs/worker$i.log"
             exit 1
         fi
-    fi
+    done
     
     # Verificar si están listos
-    W1_READY=$(curl -s http://localhost:5556/status 2>/dev/null | grep -o '"ready": true' || echo "")
+    READY_COUNT=0
+    for i in $(seq 1 $NUM_WORKERS); do
+        WORKER_PORT=$((BASE_PORT + i - 1))
+        if curl -s http://localhost:$WORKER_PORT/status 2>/dev/null | grep -q '"ready": true'; then
+            READY_COUNT=$((READY_COUNT + 1))
+        fi
+    done
     
-    if [ "$NUM_WORKERS" -eq 1 ]; then
-        if [ -n "$W1_READY" ]; then
-            echo ""
-            echo "✅ Worker 1 listo!"
-            break
-        fi
-    else
-        W2_READY=$(curl -s http://localhost:5557/status 2>/dev/null | grep -o '"ready": true' || echo "")
-        if [ -n "$W1_READY" ] && [ -n "$W2_READY" ]; then
-            echo ""
-            echo "✅ Ambos workers listos!"
-            break
-        fi
+    if [ "$READY_COUNT" -eq "$NUM_WORKERS" ]; then
+        echo ""
+        echo "✅ Todos los workers listos! ($READY_COUNT/$NUM_WORKERS)"
+        break
     fi
     
     echo -n "."
     sleep 1
 done
-
-# Configurar balanceador según número de workers
-if [ "$NUM_WORKERS" -eq 1 ]; then
-    export WORKERS_CONFIG="single"
-else
-    export WORKERS_CONFIG="dual"
-fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"

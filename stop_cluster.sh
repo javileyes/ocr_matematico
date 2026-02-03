@@ -7,29 +7,23 @@ cd "$SCRIPT_DIR"
 
 echo "🛑 Deteniendo OCR Cluster..."
 
-# Detener por PID si existen los archivos
-if [ -f logs/worker1.pid ]; then
-    PID=$(cat logs/worker1.pid)
-    if kill -0 $PID 2>/dev/null; then
-        echo "   Deteniendo Worker 1 (PID: $PID)..."
-        kill $PID 2>/dev/null || true
+# Detener todos los workers por PID (buscar todos los archivos .pid)
+for pidfile in logs/worker*.pid; do
+    if [ -f "$pidfile" ]; then
+        WORKER_NUM=$(echo "$pidfile" | grep -o '[0-9]*')
+        PID=$(cat "$pidfile")
+        if kill -0 $PID 2>/dev/null; then
+            echo "   Deteniendo Worker $WORKER_NUM (PID: $PID)..."
+            kill $PID 2>/dev/null || true
+        fi
+        rm -f "$pidfile"
     fi
-    rm -f logs/worker1.pid
-fi
+done
 
-if [ -f logs/worker2.pid ]; then
-    PID=$(cat logs/worker2.pid)
-    if kill -0 $PID 2>/dev/null; then
-        echo "   Deteniendo Worker 2 (PID: $PID)..."
-        kill $PID 2>/dev/null || true
-    fi
-    rm -f logs/worker2.pid
-fi
-
-# Matar por puerto como fallback
+# Matar por puerto como fallback (puertos 5555-5563 para hasta 8 workers)
 echo "🧹 Limpiando puertos..."
-lsof -ti :5555 | xargs kill -9 2>/dev/null || true
-lsof -ti :5556 | xargs kill -9 2>/dev/null || true
-lsof -ti :5557 | xargs kill -9 2>/dev/null || true
+for PORT in $(seq 5555 5563); do
+    lsof -ti :$PORT | xargs kill -9 2>/dev/null || true
+done
 
 echo "✅ Cluster detenido"
