@@ -8,17 +8,19 @@ Aplicación web para reconocimiento de fórmulas matemáticas escritas a mano. D
 
 - 🖌️ **Canvas de dibujo** con soporte para mouse y touch
 - 🔲 **Selección de área** para reconocimiento específico
-- 🧠 **PaddleOCR VL** - Modelo Vision-Language especializado en fórmulas
+- 🧠 **PP-FormulaNet_plus-L** - Modelo especializado en fórmulas matemáticas complejas
 - 📐 **Salida LaTeX** con preview renderizado (MathJax)
-- 🎨 **Interfaz moderna** con tema oscuro y efectos glassmorphism
+- 🔢 **Formato plano** alternativo (sin comandos LaTeX)
+- 🎨 **Interfaz moderna** con temas claro/oscuro y efectos glassmorphism
+- ⚡ **Cluster de workers** con balanceo de carga
 
 ## 📋 Requisitos
 
 - macOS con Apple Silicon (M1/M2/M3/M4)
 - Python 3.10+
-- ~4GB de espacio libre (modelos PaddleOCR)
+- ~4GB de espacio libre (modelos PaddleX)
 
-## 🚀 Instalación en Mac Silicon
+## 🚀 Instalación
 
 ### 1. Clonar el repositorio
 
@@ -37,70 +39,84 @@ source venv/bin/activate
 ### 3. Instalar dependencias
 
 ```bash
-# Actualizar pip
 pip install --upgrade pip
-
-# Instalar PaddlePaddle (CPU para Mac Silicon)
 pip install paddlepaddle
-
-# Instalar PaddleOCR con soporte para documentos
 pip install "paddleocr[doc-parser]"
-
-# Instalar dependencias web
-pip install Flask Pillow gunicorn requests
+pip install Flask Pillow gunicorn requests numpy
 ```
 
-> **Nota:** La primera vez que ejecutes la aplicación, PaddleOCR descargará los modelos (~2GB). Esto puede tardar unos minutos.
+> **Nota:** La primera vez, PaddleX descargará los modelos (~700MB para PP-FormulaNet_plus-L).
 
 ### 4. Verificar instalación
 
 ```bash
-python -c "from paddleocr import PaddleOCRVL; print('✅ PaddleOCRVL instalado correctamente')"
+python -c "from paddleocr import FormulaRecognitionPipeline; print('✅ Pipeline instalado')"
 ```
 
 ## ▶️ Ejecución
 
-### Modo desarrollo
+### Modo Cluster (Recomendado)
 
 ```bash
-# Puerto por defecto (8000)
-python app.py
+# Iniciar cluster con 2 workers
+./start_cluster.sh
 
-# Puerto personalizado
-PORT=5555 python app.py
+# Detener cluster
+./stop_cluster.sh
 ```
 
 Abre en el navegador: **http://localhost:5555**
 
-### Modo producción (Gunicorn)
+### Modo desarrollo simple
 
 ```bash
-gunicorn -w 1 -b 0.0.0.0:8000 app:app
+python app.py
 ```
-
-> ⚠️ **Importante:** Usa solo 1 worker (`-w 1`) porque PaddleOCR no es thread-safe.
 
 ## 🎯 Uso
 
-1. **Dibuja** una fórmula matemática en el canvas negro
+1. **Dibuja** una fórmula matemática en el canvas
 2. Haz clic en **"Seleccionar"** (ícono de cuadrado)
 3. **Arrastra** para seleccionar el área de la fórmula
 4. Haz clic en **"Digitalizar selección"**
 5. ¡Obtén el código **LaTeX** y el preview renderizado!
 
+## 🏗️ Arquitectura
+
+```
+                    ┌─────────────────┐
+                    │   Navegador     │
+                    │  localhost:5555 │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Load Balancer  │
+                    │   (balancer.py) │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+     ┌────────▼───────┐     ...    ┌───────▼────────┐
+     │   Worker 1     │            │   Worker N     │
+     │ PP-FormulaNet  │            │ PP-FormulaNet  │
+     │  :5556         │            │  :555X         │
+     └────────────────┘            └────────────────┘
+```
+
 ## 📁 Estructura del proyecto
 
 ```
 ocr_matematico/
-├── app.py              # Servidor Flask + PaddleOCR VL
-├── requirements.txt    # Dependencias Python
+├── app.py              # Servidor Flask principal
+├── balancer.py         # Load balancer
+├── worker.py           # Worker con PP-FormulaNet
+├── start_cluster.sh    # Script inicio cluster
+├── stop_cluster.sh     # Script parada cluster
 ├── templates/
 │   └── index.html      # Página principal
 └── static/
-    ├── css/
-    │   └── style.css   # Estilos (tema oscuro)
-    └── js/
-        └── app.js      # Lógica del canvas y API
+    ├── css/style.css   # Estilos (temas claro/oscuro)
+    └── js/app.js       # Lógica del canvas y API
 ```
 
 ## 🔧 Configuración
@@ -109,49 +125,33 @@ ocr_matematico/
 
 | Variable | Descripción | Default |
 |----------|-------------|---------|
-| `PORT` | Puerto del servidor | `8000` |
-| `USE_LAYOUT_DETECTION` | Detectar layout de documento | `true` |
-| `PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK` | Saltar verificación de modelos | `True` |
+| `NUM_WORKERS` | Número de workers en cluster | `2` |
+| `FORMULA_MODEL_NAME` | Modelo de fórmulas | `PP-FormulaNet_plus-L` |
+| `PADDLE_DEVICE` | Dispositivo (cpu/gpu) | `cpu` |
+| `PADDLE_PDX_MODEL_SOURCE` | Fuente de modelos | `huggingface` |
 
-## 🐛 Solución de problemas
+## 🧠 Modelos disponibles
 
-### Error: "Address already in use"
-
-```bash
-# Encontrar el proceso usando el puerto
-lsof -i :5555
-
-# Matar el proceso
-kill -9 <PID>
-```
-
-### Modelos no se descargan
-
-Verifica tu conexión a internet. Los modelos se descargan de Hugging Face (~2GB).
-
-### Reconocimiento vacío
-
-- Asegúrate de que el trazo sea **visible y claro**
-- Dibuja con **líneas gruesas** (ajusta el grosor)
-- La fórmula debe tener **buen contraste**
+| Modelo | Tamaño | Tokens máx | Uso recomendado |
+|--------|--------|------------|-----------------|
+| `PP-FormulaNet-S` | ~100MB | 1024 | Fórmulas simples |
+| `PP-FormulaNet-L` | ~300MB | 1024 | Fórmulas moderadas |
+| `PP-FormulaNet_plus-L` | ~700MB | **2560** | **Fórmulas complejas/anidadas** |
 
 ## 📄 API
 
 ### `POST /predict`
 
-**Request:**
 ```json
-{
-  "image": "data:image/png;base64,..."
-}
-```
+// Request
+{ "image": "data:image/png;base64,..." }
 
-**Response:**
-```json
+// Response
 {
   "ok": true,
-  "latex": "3x+2",
-  "demo_mode": false
+  "latex": "\\frac{3x+2}{\\sqrt{5x}}",
+  "plain_math": "(3x+2)/sqrt(5x)",
+  "worker_id": "worker-1"
 }
 ```
 
@@ -159,12 +159,33 @@ Verifica tu conexión a internet. Los modelos se descargan de Hugging Face (~2GB
 
 ```json
 {
-  "status": "ok",
-  "paddle_available": true,
-  "model": "PaddleOCRVL",
-  "use_layout_detection": true
+  "status": "healthy",
+  "healthy_workers": 2,
+  "total_workers": 2
 }
 ```
+
+### `GET /cluster/status`
+
+Estadísticas detalladas del cluster y workers.
+
+## 🐛 Solución de problemas
+
+### Puerto en uso
+
+```bash
+./stop_cluster.sh  # Detiene todos los procesos
+```
+
+### Fórmulas no reconocidas
+
+- Usa **trazos gruesos** (slider de grosor)
+- La fórmula debe estar **completa** en la selección
+- Prueba con fórmulas más simples primero
+
+### Modelos no se descargan
+
+Verifica conexión a internet. Los modelos se descargan de Hugging Face.
 
 ## 📝 Licencia
 
@@ -173,4 +194,5 @@ MIT License
 ## 🙏 Créditos
 
 - [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) - Motor OCR
+- [PaddleX](https://github.com/PaddlePaddle/PaddleX) - Pipeline de fórmulas
 - [MathJax](https://www.mathjax.org/) - Renderizado LaTeX
