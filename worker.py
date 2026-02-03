@@ -35,7 +35,8 @@ except ImportError as e:
 app = Flask(__name__)
 
 # Configuración
-USE_LAYOUT = os.getenv("USE_LAYOUT_DETECTION", "true").lower() == "true"
+USE_LAYOUT = os.getenv("USE_LAYOUT_DETECTION", "false").lower() == "true"
+FORMULA_MODE = os.getenv("FORMULA_MODE", "true").lower() == "true"
 PORT = int(os.getenv("PORT", 5556))
 WORKER_ID = os.getenv("WORKER_ID", f"worker-{PORT}")
 
@@ -112,8 +113,12 @@ def run_ocr(image_path: str):
     results_text = []
     
     with _pipeline_lock:
-        print(f"[{WORKER_ID}] Running OCR on {image_path}")
-        output = pipeline.predict(image_path)
+        print(f"[{WORKER_ID}] Running OCR on {image_path} (formula_mode={FORMULA_MODE})")
+        # Si FORMULA_MODE está activo, usar prompt_label para indicar que es una fórmula
+        if FORMULA_MODE:
+            output = pipeline.predict(image_path, prompt_label='formula')
+        else:
+            output = pipeline.predict(image_path)
         
         # Guardar a disco con la API oficial
         for res in output:
@@ -121,6 +126,9 @@ def run_ocr(image_path: str):
             res.save_to_json(save_path=str(outdir))
     
     # Recoger los JSON generados y extraer texto
+    formula_blocks = []
+    other_blocks = []
+    
     for jf in sorted(outdir.glob("*.json")):
         print(f"[{WORKER_ID}] Reading JSON: {jf}")
         with open(jf, "r", encoding="utf-8") as f:
@@ -133,19 +141,40 @@ def run_ocr(image_path: str):
                 for block in parsing_list:
                     if isinstance(block, dict) and "block_content" in block:
                         content = block["block_content"].strip()
+                        block_label = block.get("block_label", "")
+                        print(f"[{WORKER_ID}] Block label: '{block_label}', content: {content[:50]}...")
+                        
                         if content:
-                            results_text.append(content)
-                            print(f"[{WORKER_ID}] Found content: {content}")
+                            # Priorizar bloques de fórmulas como en el notebook original
+                            if "formula" in block_label.lower():
+                                formula_blocks.append(content)
+                                print(f"[{WORKER_ID}] Found FORMULA: {content}")
+                            else:
+                                other_blocks.append(content)
+                                print(f"[{WORKER_ID}] Found OTHER: {content}")
+    
+    # Si hay fórmulas, usar esas. Si no, usar todo el contenido
+    if formula_blocks:
+        results_text = formula_blocks
+    else:
+        results_text = other_blocks
     
     # Limpiar
     shutil.rmtree(outdir, ignore_errors=True)
     
     full_text = " ".join(str(t) for t in results_text) if results_text else ""
     full_text = full_text.strip()
+    
+    # Eliminar delimitadores $ del LaTeX (varios formatos posibles)
     if full_text.startswith("$$") and full_text.endswith("$$"):
         full_text = full_text[2:-2].strip()
     elif full_text.startswith("$") and full_text.endswith("$"):
         full_text = full_text[1:-1].strip()
+    # Manejar caso de $ sin cerrar o solo al inicio/final
+    elif full_text.startswith("$"):
+        full_text = full_text[1:].strip()
+    if full_text.endswith("$"):
+        full_text = full_text[:-1].strip()
     
     print(f"[{WORKER_ID}] Final result: '{full_text}'")
     

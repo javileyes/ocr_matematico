@@ -41,7 +41,7 @@ class MathCanvasApp {
         this.isSelecting = false;
         this.lastX = 0;
         this.lastY = 0;
-        this.strokeWidth = 3;
+        this.strokeWidth = 5;  // Grosor por defecto para mejor OCR
         this.isDarkTheme = true;
         this.strokeColor = '#ffffff'; // Default for dark theme
 
@@ -277,10 +277,15 @@ class MathCanvasApp {
         const dpr = window.devicePixelRatio || 1;
         const { x, y, width, height } = this.selection;
 
-        // Create a temporary canvas for the selection
+        // Padding around the drawing (in logical pixels)
+        const padding = 40;
+
+        // Create a temporary canvas for the selection WITH padding
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = width * dpr;
-        tempCanvas.height = height * dpr;
+        const outputWidth = width * dpr + 2 * padding * dpr;
+        const outputHeight = height * dpr + 2 * padding * dpr;
+        tempCanvas.width = outputWidth;
+        tempCanvas.height = outputHeight;
         const tempCtx = tempCanvas.getContext('2d');
 
         // Fill with white background
@@ -319,8 +324,8 @@ class MathCanvasApp {
             }
         }
 
-        // Put the processed image
-        tempCtx.putImageData(imageData, 0, 0);
+        // Put the processed image WITH padding offset
+        tempCtx.putImageData(imageData, padding * dpr, padding * dpr);
 
         // Convert to base64
         const imageBase64 = tempCanvas.toDataURL('image/png');
