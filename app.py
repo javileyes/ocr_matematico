@@ -103,6 +103,14 @@ def run_ocr(image_path: str):
     shutil.rmtree(outdir, ignore_errors=True)
 
     full_text = " ".join(str(t) for t in results_text) if results_text else ""
+    
+    # Eliminar delimitadores $ del LaTeX (MathJax usa \[ \])
+    full_text = full_text.strip()
+    if full_text.startswith("$$") and full_text.endswith("$$"):
+        full_text = full_text[2:-2].strip()
+    elif full_text.startswith("$") and full_text.endswith("$"):
+        full_text = full_text[1:-1].strip()
+    
     print(f"[DEBUG] Texto final: {full_text}")
     
     return {
