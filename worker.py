@@ -117,19 +117,112 @@ def latex_to_plain_math(latex: str) -> str:
         return ""
     
     result = latex
-    result = re.sub(r'\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}', r'(\1)/(\2)', result)
-    result = re.sub(r'\\sqrt\s*\{([^}]*)\}', r'sqrt(\1)', result)
-    result = re.sub(r'\^{([^}]*)}', r'^(\1)', result)
-    result = re.sub(r'_{([^}]*)}', r'_(\1)', result)
+    
+    # Función auxiliar para encontrar el contenido entre llaves balanceadas
+    def find_balanced_braces(s: str, start: int) -> tuple:
+        """Encuentra el contenido entre {} balanceadas, retorna (contenido, pos_final)."""
+        if start >= len(s) or s[start] != '{':
+            return None, start
+        
+        depth = 0
+        content_start = start + 1
+        i = start
+        while i < len(s):
+            if s[i] == '{':
+                depth += 1
+            elif s[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    return s[content_start:i], i + 1
+            i += 1
+        return None, start
+    
+    # Función para procesar \frac con anidamiento
+    def process_frac(s: str) -> str:
+        while '\\frac' in s:
+            idx = s.find('\\frac')
+            # Buscar primer argumento
+            pos = idx + 5
+            while pos < len(s) and s[pos] in ' \t':
+                pos += 1
+            arg1, pos = find_balanced_braces(s, pos)
+            if arg1 is None:
+                break
+            # Buscar segundo argumento
+            while pos < len(s) and s[pos] in ' \t':
+                pos += 1
+            arg2, end_pos = find_balanced_braces(s, pos)
+            if arg2 is None:
+                break
+            # Procesar recursivamente los argumentos
+            arg1 = process_frac(arg1)
+            arg2 = process_frac(arg2)
+            # Reemplazar
+            s = s[:idx] + f'({arg1})/({arg2})' + s[end_pos:]
+        return s
+    
+    # Función para procesar \sqrt con anidamiento
+    def process_sqrt(s: str) -> str:
+        while '\\sqrt' in s:
+            idx = s.find('\\sqrt')
+            pos = idx + 5
+            # Verificar si tiene índice opcional [n]
+            while pos < len(s) and s[pos] in ' \t':
+                pos += 1
+            index = None
+            if pos < len(s) and s[pos] == '[':
+                bracket_end = s.find(']', pos)
+                if bracket_end != -1:
+                    index = s[pos+1:bracket_end]
+                    pos = bracket_end + 1
+            while pos < len(s) and s[pos] in ' \t':
+                pos += 1
+            arg, end_pos = find_balanced_braces(s, pos)
+            if arg is None:
+                break
+            # Procesar recursivamente el argumento
+            arg = process_sqrt(arg)
+            arg = process_frac(arg)
+            if index:
+                s = s[:idx] + f'root({arg},{index})' + s[end_pos:]
+            else:
+                s = s[:idx] + f'sqrt({arg})' + s[end_pos:]
+        return s
+    
+    # Procesar fracciones y raíces primero (son las más complejas)
+    result = process_frac(result)
+    result = process_sqrt(result)
+    
+    # Procesar potencias y subíndices con llaves
+    def process_power_subscript(s: str, cmd: str, replacement: str) -> str:
+        while cmd + '{' in s:
+            idx = s.find(cmd + '{')
+            pos = idx + len(cmd)
+            arg, end_pos = find_balanced_braces(s, pos)
+            if arg is None:
+                break
+            s = s[:idx] + replacement + '(' + arg + ')' + s[end_pos:]
+        return s
+    
+    result = process_power_subscript(result, '^', '^')
+    result = process_power_subscript(result, '_', '_')
+    
+    # Operadores
     result = re.sub(r'\\cdot', '*', result)
     result = re.sub(r'\\times', '*', result)
     result = re.sub(r'\\div', '/', result)
     result = re.sub(r'\\pm', '±', result)
     result = re.sub(r'\\mp', '∓', result)
+    
+    # Comparadores
     result = re.sub(r'\\leq', '≤', result)
     result = re.sub(r'\\geq', '≥', result)
     result = re.sub(r'\\neq', '≠', result)
-    result = re.sub(r'\\pi', 'π', result)
+    result = re.sub(r'\\le(?![a-z])', '≤', result)
+    result = re.sub(r'\\ge(?![a-z])', '≥', result)
+    
+    # Símbolos griegos y especiales
+    result = re.sub(r'\\pi(?![a-z])', 'π', result)
     result = re.sub(r'\\infty', '∞', result)
     result = re.sub(r'\\alpha', 'α', result)
     result = re.sub(r'\\beta', 'β', result)
@@ -137,9 +230,17 @@ def latex_to_plain_math(latex: str) -> str:
     result = re.sub(r'\\theta', 'θ', result)
     result = re.sub(r'\\lambda', 'λ', result)
     result = re.sub(r'\\sigma', 'σ', result)
+    result = re.sub(r'\\delta', 'δ', result)
+    result = re.sub(r'\\epsilon', 'ε', result)
+    result = re.sub(r'\\phi', 'φ', result)
+    result = re.sub(r'\\omega', 'ω', result)
+    
+    # Operadores grandes
     result = re.sub(r'\\sum', 'Σ', result)
     result = re.sub(r'\\prod', 'Π', result)
     result = re.sub(r'\\int', '∫', result)
+    
+    # Delimitadores
     result = re.sub(r'\\left\(', '(', result)
     result = re.sub(r'\\right\)', ')', result)
     result = re.sub(r'\\left\[', '[', result)
@@ -148,10 +249,20 @@ def latex_to_plain_math(latex: str) -> str:
     result = re.sub(r'\\right\}', '}', result)
     result = re.sub(r'\\left\.', '', result)
     result = re.sub(r'\\right\.', '', result)
+    result = re.sub(r'\\left\|', '|', result)
+    result = re.sub(r'\\right\|', '|', result)
+    
+    # Limpiar comandos restantes
     result = re.sub(r'\\[a-zA-Z]+', '', result)
-    result = re.sub(r'\^(\([a-zA-Z0-9]+\))', r'^\1', result)
-    result = re.sub(r'_(\([a-zA-Z0-9]+\))', r'_\1', result)
+    
+    # Limpiar llaves sueltas que quedaron
+    result = result.replace('{', '').replace('}', '')
+    
+    # Simplificar paréntesis redundantes en casos simples
+    # (x)/(y) donde x e y son simples -> x/y
     result = re.sub(r'\(([a-zA-Z0-9]+)\)/\(([a-zA-Z0-9]+)\)', r'\1/\2', result)
+    
+    # Limpiar espacios
     result = re.sub(r'\s+', ' ', result).strip()
     
     return result
